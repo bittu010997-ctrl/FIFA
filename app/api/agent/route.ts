@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, FunctionDeclaration, Tool } from '@google/generative-ai';
 import { tools } from '@/lib/tools';
@@ -87,16 +88,31 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     
     // Convert our schemas to Gemini FunctionDeclarations format
+    // Gemini requires schema types to be uppercase (e.g., 'OBJECT', 'STRING')
+    const convertSchemaTypes = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      if (Array.isArray(obj)) return obj.map(convertSchemaTypes);
+      const newObj: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (key === 'type' && typeof value === 'string') {
+          newObj[key] = value.toUpperCase();
+        } else {
+          newObj[key] = convertSchemaTypes(value);
+        }
+      }
+      return newObj;
+    };
+
     const functionDeclarations: FunctionDeclaration[] = tools.map(t => ({
       name: t.schema.name,
       description: t.schema.description,
-      parameters: t.schema.parameters as any
+      parameters: convertSchemaTypes(t.schema.parameters)
     }));
 
     const geminiTools: Tool[] = [{ functionDeclarations }];
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       tools: geminiTools,
       systemInstruction: `You are the Stadium Copilot, an AI assistant for fans and staff at a FIFA World Cup 2026 stadium.
 You are a multilingual assistant. Always respond in the user's requested language: ${requestedLang}.
